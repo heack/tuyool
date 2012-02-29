@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+	<array>
+		<dict>
+			<key>selector</key>
+			<string>showEditProfileViewController</string>
+			<key>label</key>
+			<string>Edit Profile</string>
+			<key>icon</key>
+			<string>tablecell_man.png</string>
+		</dict>
+		<dict>
+			<key>label</key>
+			<string>General</string>
+			<key>icon</key>
+			<string>tablecell_general.png</string>
+		</dict>
+	</array>
+	<array>
+		<dict>
+			<key>label</key>
+			<string>About</string>
+			<key>icon</key>
+			<string>tablecell_about.png</string>
+		</dict>
+	</array>
+</array>
+</plist>

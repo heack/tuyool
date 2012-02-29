@@ -1,0 +1,655 @@
+//
+//  UserProfile.m
+//  SwingLife
+//
+//  Created by kong yang on 11-9-28.
+//  Copyright 2011年 Crosslife. All rights reserved.
+//
+
+#import "UserProfile.h"
+#import "ASIFormDataRequest.h"
+#import "SBJson.h"
+#import "Base64.h"
+
+@implementation UserProfile
+
+@synthesize userId;
+@synthesize userName;
+@synthesize userHeadImage;
+@synthesize dataPath;
+@synthesize data;
+@synthesize delegate;
+@synthesize latitude;
+@synthesize longitude;
+@synthesize nearbyUsers;
+@synthesize showDistance;
+@synthesize recentContacts;
+@synthesize isOnline;
+@synthesize isOnlyShowOnlineUsers;
+@synthesize introduction;
+@synthesize location;
+@synthesize age;
+@synthesize height;
+@synthesize lookingFor;
+@synthesize maxage;
+@synthesize minage;
+@synthesize weight;
+@synthesize spouseweight;
+@synthesize spouseage;
+@synthesize spouseheight;
+@synthesize totalUnreadNum;
+
+- (id)initWithDelegate: (id<UserProfileErrorDelegate>) delegater
+{
+    self = [super init];
+    if (self) {
+        delegate = delegater;
+        isOnline = 1;
+        NSArray *paths = 
+        NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask, YES); 
+        NSString *documentsPath = [paths objectAtIndex:0]; 
+        NSLog(@"document Path:%@",documentsPath);
+        // <Application Home>/Documents/foo.plist 
+        NSString *fooPath = [documentsPath stringByAppendingPathComponent:@"profiles.plist"];
+        NSLog(@"document path:%@", fooPath);
+        [self setDataPath:fooPath];
+        [self setData :[NSDictionary dictionaryWithContentsOfFile:self.dataPath]];
+        NSLog(@"userName:%@",[self.data objectForKey:@"userName"]);
+        if (self.data == nil) {
+            [self setData:[[[NSMutableDictionary alloc] init] autorelease]];
+        }
+        [self setUserId:[self.data valueForKey:@"userId"]];
+        NSLog(@"userId in plist %@",[data valueForKey:@"userId"]);
+        if (userId == nil) {
+            NSLog(@"try to get id via http");
+            NSURL *url = [NSURL URLWithString:@"http://swinglife.crosslife.com/profile.php"];
+            ASIFormDataRequest *request = [ASIFormDataRequest requestWithURL:url];
+            NSString *jsonString = @"{\"empty\":\"true\"}";
+            [request setPostValue:jsonString forKey:@"user_profile"];
+            [request startSynchronous];
+            NSError *error = [request error];
+            if (!error) {
+               
+                NSString *response = [request responseString];
+                 NSLog(@"get id via http %@", response);
+                SBJsonParser *jsonParser = [[SBJsonParser alloc] init];
+                NSDictionary *dct = [jsonParser objectWithString:response];
+                [self saveUserId:[dct objectForKey:@"id"]];
+                [jsonParser release];
+            } else {
+                [self.delegate showErrorMessage:@"Please Check Your Network Connectoin."];
+                
+            }
+        }
+
+    }
+    
+    return self;
+}
+
+-(void) sendProfileValueToServer:(NSString*) value withKey:(NSString*) key withInProfiles:(BOOL) inProfile asynchronous:(BOOL) isAsyn
+{
+    NSString *escapedValue = value;
+    //NSString *escapedValue = [value stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+    NSURL *url = [[NSURL alloc]initWithString: @"http://swinglife.crosslife.com/profile.php"];
+    ASIFormDataRequest *request = [ASIFormDataRequest requestWithURL:url];
+    NSString *jsonString;
+    if (inProfile) {
+        jsonString = [[NSString alloc] initWithFormat:@"{\"id\":\"%@\",\"profiles\":{\"%@\":\"%@\"}}", self.userId, key, escapedValue];
+    } else {
+        jsonString = [[NSString alloc] initWithFormat:@"{\"id\":\"%@\",\"%@\":\"%@\"}", self.userId, key, escapedValue];
+    }
+    [request setPostValue:jsonString forKey:@"user_profile"];
+    [jsonString release];
+    if (isAsyn) {
+        [request setDelegate:self];
+        [request startAsynchronous];
+    } else {
+        [request startSynchronous];
+    }
+    [url release];
+    
+}
+
+-(NSArray*) getNearByUsers
+{
+    if (self.nearbyUsers == nil) {
+        NSString *url_string = [[NSString alloc] initWithFormat:@"http://swinglife.crosslife.com/nearbyusers.php?id=%@&lat=%@&lon=%@&page=0&online=%@",self.userId,self.latitude==nil?@"":self.latitude,self.longitude==nil?@"":self.longitude,self.isOnlyShowOnlineUsers?@"1":@"0"];
+        NSLog(@"get nearbyusers:%@",url_string);
+        NSURL *url = [NSURL URLWithString:url_string];
+        ASIFormDataRequest *request = [ASIFormDataRequest requestWithURL:url];
+        [url_string release];
+        [request startSynchronous];
+        NSError *error = [request error];
+        if (!error) {
+            NSString *response = [request responseString];
+            NSLog(@"get nearby users with response:%@", response);
+            SBJsonParser *jsonParser = [[SBJsonParser alloc] init];
+            [self setNearbyUsers:[jsonParser objectWithString:response]];
+            [jsonParser release];
+            return self.nearbyUsers;
+        } else {
+            [self.delegate showErrorMessage:@"Please Check Your Network Connectoin."];
+            return nil;
+            
+        }
+    } else {
+        return self.nearbyUsers;
+    }
+
+}
+
+-(NSArray*) getRecentContacts
+{
+    if (self.recentContacts == nil){
+        NSString *url_string = [[NSString alloc] initWithFormat:@"http://swinglife.crosslife.com/chat.php?sourceid=%@&method=fetchall",self.userId];
+        NSURL *url = [NSURL URLWithString:url_string];
+        ASIFormDataRequest *request = [ASIFormDataRequest requestWithURL:url];
+        [url_string release];
+        [request startSynchronous];
+        NSError *error = [request error];
+        if (!error) {
+            NSString *response = [request responseString];
+            NSLog(@"get recent contacts with response:%@", response);
+            SBJsonParser *jsonParser = [[SBJsonParser alloc] init];
+            [self setRecentContacts:[jsonParser objectWithString:response]];
+            [jsonParser release];
+            return self.recentContacts;
+        } else {
+            [self.delegate showErrorMessage:@"Please Check Your Network Connectoin."];
+            return nil;
+            
+        }
+    } else {
+        return self.recentContacts;
+    }
+}
+
+-(void) sendCustomJsonStringToServer:(NSString *)jsonString asynchronous:(BOOL) isAsyn
+{
+    NSURL *url = [[NSURL alloc]initWithString: @"http://swinglife.crosslife.com/profile.php"];
+    ASIFormDataRequest *request = [ASIFormDataRequest requestWithURL:url];
+    [request setPostValue:jsonString forKey:@"user_profile"];
+    if (isAsyn) {
+        [request setDelegate:self];
+        [request startAsynchronous];
+    } else {
+        [request startSynchronous];
+    }
+    [url release];
+}
+
+-(NSString *) getTotalUnreadNum
+{
+    NSString *url_string = [[NSString alloc] initWithFormat:@"http://swinglife.crosslife.com/chat.php?sourceid=%@&method=fetchunreadnum",self.userId];
+    NSURL *url = [NSURL URLWithString:url_string];
+    ASIFormDataRequest *request = [ASIFormDataRequest requestWithURL:url];
+    [url_string release];
+    [request startSynchronous];
+    NSError *error = [request error];
+    if (!error) {
+        NSString *response = [request responseString];
+        NSLog(@"get recent contacts with response:%@", response);
+        SBJsonParser *jsonParser = [[SBJsonParser alloc] init];
+        NSDictionary *json = [jsonParser objectWithString:response];
+        NSString *num = [json objectForKey:@"num"];
+        [jsonParser release];
+        self.totalUnreadNum = [num integerValue];
+        return num;
+    } else {
+        [self.delegate showErrorMessage:@"Please Check Your Network Connectoin."];
+        return @"0";
+        
+    }
+}
+
+-(void) saveUserId:(NSString *)user_id
+{
+    NSLog(@"datapath in userProfile %@",self.dataPath);
+    [self setUserId:user_id];
+    [self.data setValue:self.userId forKey:@"userId"];
+    BOOL ret = [self.data writeToFile:self.dataPath atomically:YES];
+    NSLog(@"%i", ret);
+}
+
+-(NSString *)userName
+{
+    //if (userName == nil) {
+    [self setUserName:[self.data objectForKey:@"userName"]];
+    //}
+    NSLog(@"userName name is:%@", userName);
+    if (userName == nil) {
+        return @"Unnamed";
+    } else {
+        return userName;
+    }
+}
+-(void) saveUserName:(NSString *)user_name
+{
+    [self setUserName:user_name];
+    [self.data setValue:user_name forKey:@"userName"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:userName withKey:@"name" withInProfiles:NO asynchronous:YES];
+}
+
+-(NSString *)introduction
+{
+    //if (introduction == nil) {
+    [self setIntroduction:[self.data objectForKey:@"introduction"]];
+    //}
+    
+    return introduction;
+}
+
+-(void) saveIntroduction:(NSString *)per_introduction
+{
+    NSLog(@"introduction is:%@",per_introduction);
+    [self setIntroduction:per_introduction];
+    [self.data setValue:per_introduction forKey:@"introduction"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:introduction withKey:@"introduction" withInProfiles:YES asynchronous:YES];
+}
+
+-(void) clearIntroduction
+{
+    [self.data removeObjectForKey:@"introduction"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"introduction" withInProfiles:YES asynchronous:YES];
+}
+
+-(NSString *)lookingFor
+{
+    //if (lookingFor == nil) {
+    [self setLookingFor:[self.data objectForKey:@"lookingfor"]];
+    //}
+    
+    return lookingFor;
+}
+
+-(void) saveLookingFor:(NSString *)per_lookingFor
+{
+    [self setLookingFor:per_lookingFor];
+    [self.data setValue:per_lookingFor forKey:@"lookingfor"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:lookingFor withKey:@"lookingfor" withInProfiles:YES asynchronous:YES];
+}
+
+-(void) clearLookingFor
+{
+    [self.data removeObjectForKey:@"lookingfor"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"lookingfor" withInProfiles:YES asynchronous:YES];
+}
+
+-(NSString *)location
+{
+    //if (ethnicity == nil) {
+    [self setLocation:[self.data objectForKey:@"location"]];
+    //}
+    
+    return location;
+}
+
+-(void) saveLocation:(NSString *)per_location
+{
+    [self setLocation:per_location];
+    [self.data setValue:per_location forKey:@"location"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:location withKey:@"location" withInProfiles:YES asynchronous:YES];
+}
+
+-(void) clearLocation
+{
+    [self.data removeObjectForKey:@"location"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"location" withInProfiles:YES asynchronous:YES];
+}
+
+-(NSString *)age
+{
+    //if (age == nil) {
+    [self setAge:[self.data objectForKey:@"age"]];
+    //}
+    
+    return age;
+}
+
+-(void) saveAge:(NSString *)per_age
+{
+    [self setAge:per_age];
+    [self.data setValue:per_age forKey:@"age"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:age withKey:@"age" withInProfiles:YES asynchronous:YES];
+}
+
+-(void) clearAge
+{
+    [self.data removeObjectForKey:@"age"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"age" withInProfiles:YES asynchronous:YES];
+}
+
+-(NSString *)height
+{
+    //if (height == nil) {
+    [self setHeight:[self.data objectForKey:@"height"]];
+    //}
+    
+    return height;
+}
+
+-(void) saveHeight:(NSString *)per_height
+{
+    [self setHeight:per_height];
+    [self.data setValue:per_height forKey:@"height"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:height withKey:@"height" withInProfiles:YES asynchronous:YES];
+}
+
+-(void) clearHeight
+{
+    [self.data removeObjectForKey:@"height"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"height" withInProfiles:YES asynchronous:YES];
+}
+
+-(NSString *)weight
+{
+    //if (weight == nil) {
+    [self setWeight:[self.data objectForKey:@"weight"]];
+    //}
+    
+    return weight;
+}
+
+-(void) saveWeight:(NSString *)per_weight
+{
+    [self setWeight:per_weight];
+    [self.data setValue:per_weight forKey:@"weight"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:weight withKey:@"weight" withInProfiles:YES asynchronous:YES];
+}
+
+-(void) clearWeight
+{
+    [self.data removeObjectForKey:@"weight"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"weight" withInProfiles:YES asynchronous:YES];
+}
+
+-(NSString *)spouseage
+{
+    //if (socialLink == nil) {
+    [self setSpouseage:[self.data objectForKey:@"spouseage"]];
+    //}
+    
+    return spouseage;
+}
+
+-(void) saveSpouseage:(NSString *)per_spouseage
+{
+    [self setSpouseage:per_spouseage];
+    [self.data setValue:per_spouseage forKey:@"spouseage"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:spouseage withKey:@"spouseage" withInProfiles:YES asynchronous:YES];
+}
+
+-(void) clearSpouseage
+{
+    [self.data removeObjectForKey:@"spouseage"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"spouseage" withInProfiles:YES asynchronous:YES];
+}
+
+-(NSString *)spouseheight
+{
+    //if (socialLink == nil) {
+    [self setSpouseheight:[self.data objectForKey:@"spouseheight"]];
+    //}
+    
+    return spouseheight;
+}
+
+-(void) saveSpouseheight:(NSString *)per_spouseheight
+{
+    NSLog(@"spouse height:%@", per_spouseheight);
+    [self setSpouseheight:per_spouseheight];
+    [self.data setValue:per_spouseheight forKey:@"spouseheight"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:spouseheight withKey:@"spouseheight" withInProfiles:YES asynchronous:YES];
+}
+
+-(void) clearSpouseheight
+{
+    [self.data removeObjectForKey:@"spouseheight"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"spouseheight" withInProfiles:YES asynchronous:YES];
+}
+
+-(NSString *)spouseweight
+{
+    //if (socialLink == nil) {
+    [self setSpouseweight:[self.data objectForKey:@"spouseweight"]];
+    //}
+    
+    return spouseweight;
+}
+
+-(void) saveSpouseweight:(NSString *)per_spouseweight
+{
+    [self setSpouseweight:per_spouseweight];
+    [self.data setValue:per_spouseweight forKey:@"spouseweight"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:spouseweight withKey:@"spouseweight" withInProfiles:YES asynchronous:YES];
+}
+
+-(void) clearSpouseweight
+{
+    [self.data removeObjectForKey:@"spouseweight"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"spouseweight" withInProfiles:YES asynchronous:YES];
+}
+
+-(NSString *)minage
+{
+    //if (minage == nil) {
+    [self setMinage:[self.data objectForKey:@"minage"]];
+    //}
+    
+    return minage;
+}
+
+-(void) saveMinage:(NSString *)per_minage
+{
+    [self setMinage:per_minage];
+    [self.data setValue:per_minage forKey:@"minage"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:minage withKey:@"minage" withInProfiles:NO asynchronous:YES];
+}
+
+-(void) clearMinage
+{
+    [self.data removeObjectForKey:@"minage"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"minage" withInProfiles:NO asynchronous:YES];
+}
+
+-(NSString *)maxage
+{
+    //if (maxage == nil) {
+    [self setMaxage:[self.data objectForKey:@"maxage"]];
+    //}
+    
+    return maxage;
+}
+
+-(void) saveMaxage:(NSString *)per_maxage
+{
+    [self setMaxage:per_maxage];
+    [self.data setValue:per_maxage forKey:@"maxage"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:maxage withKey:@"maxage" withInProfiles:NO asynchronous:YES];
+}
+
+-(void) clearMaxage
+{
+    [self.data removeObjectForKey:@"maxage"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"maxage" withInProfiles:NO asynchronous:YES];
+}
+
+-(NSString *)showDistance
+{
+    //NSLog(@"distance: %@", showDistance);
+    //NSLog(@"distance in plist: %@", [self.data objectForKey:@"showdistance"]);
+    //if (showDistance == nil) {
+    [self setShowDistance:[self.data objectForKey:@"showdistance"]];
+    //}
+    return showDistance;
+}
+
+-(void) saveShowDistance:(NSString *)show_distance
+{
+    [self setShowDistance:show_distance];
+    [self.data setValue:showDistance forKey:@"showdistance"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+}
+
+-(void) setOnline
+{
+    isOnline = 1;
+    [self sendProfileValueToServer:@"1" withKey:@"isonline" withInProfiles:NO asynchronous:NO];
+}
+
+-(void) setOffline
+{
+    isOnline = 0;
+    [self sendProfileValueToServer:@"0" withKey:@"isonline" withInProfiles:NO asynchronous:NO];
+}
+//-(NSString *)longitude
+//{
+//    if (longitude == nil)
+//        [self setLongitude:[self.data objectForKey:@"longitude"]];
+//    return longitude;
+//}
+-(void) saveLongitude:(NSString *)p_longitude withLatitude:(NSString *)p_latitude
+{
+    BOOL changed = false;
+    if (self.longitude != p_longitude) 
+    {
+        changed = YES;
+        [self setLongitude:p_longitude];
+        [self.data setValue:self.longitude forKey:@"longitude"];
+    }
+    if (self.latitude != p_latitude)
+    {
+        changed = YES;
+        [self setLatitude:p_latitude];
+        [self.data setValue:self.latitude forKey:@"latitude"];
+    }
+    if (changed) {
+        [self.data writeToFile:self.dataPath atomically:YES];
+        NSString *postString = [[NSString alloc] initWithFormat:@"{\"id\":\"%@\",\"logtitude\":\"%@\",\"latitude\":\"%@\"}",self.userId,self.longitude,self.latitude];
+        [self sendCustomJsonStringToServer:postString asynchronous:NO];
+        [postString release];
+    }
+}
+
+
+
+
+-(UIImage*) userHeadImage
+{
+    if (userHeadImage == nil) 
+    {
+        NSData *imgData = [self.data objectForKey:@"userHeadImage"];
+        if (imgData) {
+            [self setUserHeadImage:[[[UIImage alloc] initWithData:[self.data objectForKey:@"userHeadImage"]]autorelease]];
+        } else {
+            [self setUserHeadImage:[UIImage imageNamed:@"default_head_img.jpg"]];
+        }
+        
+    }
+    return userHeadImage;
+}
+-(void) saveUserHeadImage:(UIImage *)user_headImage
+{
+    [self setUserHeadImage:user_headImage];
+    NSData *imgData = UIImageJPEGRepresentation(self.userHeadImage, 1.0);
+    [self.data setValue:imgData forKey:@"userHeadImage"];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    NSString *bast64EncodeHeadImage = [Base64  encodeBase64WithData:imgData];
+    [self sendProfileValueToServer:bast64EncodeHeadImage withKey:@"headimg" withInProfiles:NO asynchronous:YES];
+}
+
+-(void) clearProfile
+{
+    NSLog(@"%@", self.data.allKeys);
+    [self clearIntroduction];
+    [self clearAge];
+    [self clearLocation];
+    [self clearHeight];
+    [self clearLookingFor];
+    [self clearMaxage];
+    [self clearMinage];
+    [self clearSpouseage];
+    [self clearSpouseheight];
+    [self clearSpouseweight];
+    [self clearWeight];
+    [self setUserHeadImage:nil];
+    NSArray *clearProfile = [[NSArray alloc] initWithObjects:@"userName", @"longitude", @"latitude", @"userHeadImage", @"showdistance", nil];
+    [self.data removeObjectsForKeys:clearProfile];
+    [self.data writeToFile:self.dataPath atomically:YES];
+    [self sendProfileValueToServer:@"" withKey:@"name" withInProfiles:NO asynchronous:YES];
+    [self sendProfileValueToServer:@"" withKey:@"headimage" withInProfiles:NO asynchronous:YES];
+    NSLog(@"%@", self.data.allKeys);
+    NSLog(@"distance after remove all objects: %@", showDistance);
+    [clearProfile release];
+}
+
+
+-(void) dealloc
+{
+    [introduction release];
+    [lookingFor release];
+    [location release];
+    [height release];
+    [weight release];
+    [spouseage release];
+    [spouseheight release];
+    [spouseweight release];
+    [nearbyUsers release];
+    [recentContacts release];
+    [userId release];
+    [userName release];
+    [userHeadImage release];
+    [showDistance release];
+    [age release];
+    [maxage release];
+    [minage release];
+    [dataPath release];
+    [data release];
+    [super dealloc];
+}
+
+//ASIRequest delegate begin
+
+- (void)requestFinished:(ASIHTTPRequest *)request
+{
+    
+    // Use when fetching text data
+    NSString *responseString = [request responseString];
+    NSLog(@"request finished with response:%@",responseString);
+    // Use when fetching binary data
+    //NSData *responseData = [request responseData];
+}
+
+- (void)requestFailed:(ASIHTTPRequest *)request
+{
+    NSLog(@"failed");
+    [self.delegate showErrorMessage:@"Please Check Your Network Connectoin."];
+    //NSError *error = [request error];
+}
+//ASIRequest delegate end
+
+@end
